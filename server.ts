@@ -213,6 +213,24 @@ app.get('/api/weak-areas', (_req, res) => {
   res.json(getWeakAreas());
 });
 
+// PATCH /api/flashcards/:id/review — update mastery from a review rating
+app.patch('/api/flashcards/:id/review', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { rating } = req.body as { rating: 'again' | 'hard' | 'easy' };
+
+  if (!['again', 'hard', 'easy'].includes(rating)) {
+    return res.status(400).json({ error: 'rating must be again | hard | easy' });
+  }
+
+  const card = flashcards.find((f) => f.id === id);
+  if (!card) return res.status(404).json({ error: 'Card not found' });
+
+  const delta = rating === 'again' ? -20 : rating === 'hard' ? 5 : 15;
+  card.mastery = Math.min(100, Math.max(0, card.mastery + delta));
+
+  res.json(card);
+});
+
 // POST /api/upload-pdf — multimodal PDF synthesis
 app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
   try {
