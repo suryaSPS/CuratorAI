@@ -4,6 +4,14 @@ import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import multer from 'multer';
 
+// --- Startup guard: fail fast if API key is missing ---
+if (!process.env.GEMINI_API_KEY) {
+  console.error(
+    'FATAL: GEMINI_API_KEY is not set.\nCopy .env.example to .env and add your Gemini API key.'
+  );
+  process.exit(1);
+}
+
 const app = express();
 app.use(express.json());
 
@@ -33,18 +41,32 @@ interface Course {
 }
 
 interface StudyEvent {
-  type: 'message_sent' | 'concept_extracted' | 'pdf_uploaded' | 'flashcard_created' | 'session_started';
+  type:
+    | 'message_sent'
+    | 'concept_extracted'
+    | 'pdf_uploaded'
+    | 'flashcard_created'
+    | 'session_started';
   timestamp: string;
 }
 
-// --- In-memory state (empty on start — no fabricated data) ---
+// --- In-memory state ---
+let nextId = 1;
+const newId = () => nextId++;
+
 let flashcards: Flashcard[] = [];
 let courses: Course[] = [];
-let currentCourseContext: { title: string; outline: Course['outline'] } | null = null;
+let currentCourseId: number | null = null;
 let studyEvents: StudyEvent[] = [];
 let sessionCount = 0;
 
 // --- Helpers ---
+
+function getCurrentCourse(): Course | undefined {
+  return currentCourseId !== null
+    ? courses.find((c) => c.id === currentCourseId)
+    : undefined;
+}
 
 function getRelativeTime(isoString: string): string {
   const diffMs = Date.now() - new Date(isoString).getTime();
@@ -115,12 +137,18 @@ function getWeakAreas() {
     }));
 }
 
-// --- Initialize AI (server-side only) ---
+// Prune events older than 30 days to prevent unbounded growth
+function pruneOldEvents() {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  studyEvents = studyEvents.filter((e) => e.timestamp >= cutoff);
+}
+
+// --- Initialize AI ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // --- API ROUTES ---
 
-// GET /api/user — user profile from environment
+// GET /api/user
 app.get('/api/user', (_req, res) => {
   res.json({
     name: process.env.USER_NAME || 'Learner',
@@ -128,16 +156,19 @@ app.get('/api/user', (_req, res) => {
   });
 });
 
-// GET /api/context — current course + flashcards
+// GET /api/context
 app.get('/api/context', (_req, res) => {
+  const course = getCurrentCourse();
   res.json({
-    course: currentCourseContext,
+    course: course
+      ? { title: course.title, outline: course.outline }
+      : null,
     flashcards,
     sessionCount,
   });
 });
 
-// GET /api/flashcards — full deck
+// GET /api/flashcards
 app.get('/api/flashcards', (_req, res) => {
   res.json(flashcards);
 });
@@ -148,7 +179,7 @@ app.post('/api/flashcards', (req, res) => {
   if (!q || !a) return res.status(400).json({ error: 'Question and answer are required' });
 
   const newCard: Flashcard = {
-    id: Date.now(),
+    id: newId(),
     tag: tag || 'Custom',
     q,
     a,
@@ -160,8 +191,10 @@ app.post('/api/flashcards', (req, res) => {
   res.json(newCard);
 });
 
-// GET /api/analytics — computed from real events
+// GET /api/analytics
 app.get('/api/analytics', (_req, res) => {
+  pruneOldEvents();
+
   const totalMessages = studyEvents.filter((e) => e.type === 'message_sent').length;
   const totalConcepts = studyEvents.filter((e) => e.type === 'concept_extracted').length;
   const avgMastery =
@@ -177,7 +210,6 @@ app.get('/api/analytics', (_req, res) => {
     color: '#00c8fe',
   }));
 
-  // Last 3 AI-extracted flashcards for "Recent Concepts" section
   const recentConcepts = flashcards
     .filter((f) => f.source === 'ai_chat')
     .slice(0, 3)
@@ -196,7 +228,7 @@ app.get('/api/analytics', (_req, res) => {
   });
 });
 
-// GET /api/subjects — derived from uploaded courses
+// GET /api/subjects
 app.get('/api/subjects', (_req, res) => {
   const result = courses.map((c) => ({
     id: c.id,
@@ -208,7 +240,7 @@ app.get('/api/subjects', (_req, res) => {
   res.json(result);
 });
 
-// GET /api/weak-areas — computed from actual flashcard mastery
+// GET /api/weak-areas
 app.get('/api/weak-areas', (_req, res) => {
   res.json(getWeakAreas());
 });
@@ -216,8 +248,9 @@ app.get('/api/weak-areas', (_req, res) => {
 // PATCH /api/flashcards/:id/review — update mastery from a review rating
 app.patch('/api/flashcards/:id/review', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { rating } = req.body as { rating: 'again' | 'hard' | 'easy' };
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid card ID' });
 
+  const { rating } = req.body as { rating: 'again' | 'hard' | 'easy' };
   if (!['again', 'hard', 'easy'].includes(rating)) {
     return res.status(400).json({ error: 'rating must be again | hard | easy' });
   }
@@ -238,7 +271,7 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
 
     const pdfBase64 = req.file.buffer.toString('base64');
 
-    const schema: any = {
+    const schema = {
       type: Type.OBJECT,
       properties: {
         title: { type: Type.STRING, description: 'A catchy, academic title for this material.' },
@@ -294,12 +327,12 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
     if (!response.text) throw new Error('Failed to generate content from PDF');
 
     const result = JSON.parse(response.text);
-    const courseId = Date.now();
+    const courseId = newId();
 
     const newCourse: Course = {
       id: courseId,
       title: result.title,
-      outline: result.outline.map((o: any, i: number) => ({
+      outline: result.outline.map((o: { title: string; description: string }, i: number) => ({
         ...o,
         status: i === 0 ? 'active' : 'upcoming',
       })),
@@ -309,22 +342,24 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
     };
 
     courses.push(newCourse);
-    currentCourseContext = { title: newCourse.title, outline: newCourse.outline };
+    currentCourseId = courseId;
 
-    const newCards: Flashcard[] = result.flashcards.map((f: any, i: number) => ({
-      id: courseId + i + 1,
-      tag: f.tag || 'General',
-      q: f.q,
-      a: f.a || '',
-      mastery: 0,
-      courseId,
-      source: 'pdf' as const,
-    }));
+    const newCards: Flashcard[] = result.flashcards.map(
+      (f: { tag: string; q: string; a: string }) => ({
+        id: newId(),
+        tag: f.tag || 'General',
+        q: f.q,
+        a: f.a || '',
+        mastery: 0,
+        courseId,
+        source: 'pdf' as const,
+      })
+    );
 
     flashcards = [...newCards, ...flashcards];
     studyEvents.push({ type: 'pdf_uploaded', timestamp: new Date().toISOString() });
 
-    res.json({ success: true, course: currentCourseContext });
+    res.json({ success: true, course: { title: newCourse.title, outline: newCourse.outline } });
   } catch (error) {
     console.error('PDF Processing Error:', error);
     res.status(500).json({ error: 'Failed to process PDF' });
@@ -336,6 +371,11 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, history } = req.body;
 
+    // Validate message
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
     // Count a new session when the user sends their first message
     if (!history || history.length === 0) {
       sessionCount++;
@@ -344,16 +384,14 @@ app.post('/api/chat', async (req, res) => {
 
     studyEvents.push({ type: 'message_sent', timestamp: new Date().toISOString() });
 
-    // Update active course engagement
-    if (currentCourseContext) {
-      const course = courses.find((c) => c.title === currentCourseContext?.title);
-      if (course) {
-        course.messageCount++;
-        course.lastActiveAt = new Date().toISOString();
-      }
+    // Update active course engagement by ID
+    const activeCourse = getCurrentCourse();
+    if (activeCourse) {
+      activeCourse.messageCount++;
+      activeCourse.lastActiveAt = new Date().toISOString();
     }
 
-    const responseSchema: any = {
+    const responseSchema = {
       type: Type.OBJECT,
       properties: {
         reply: {
@@ -365,7 +403,7 @@ app.post('/api/chat', async (req, res) => {
           type: Type.OBJECT,
           nullable: true,
           description:
-            "If the conversation introduces a highly important, testable concept, extract it into a flashcard. Otherwise, return null.",
+            'If the conversation introduces a highly important, testable concept, extract it into a flashcard. Otherwise, return null.',
           properties: {
             tag: {
               type: Type.STRING,
@@ -380,13 +418,23 @@ app.post('/api/chat', async (req, res) => {
       required: ['reply'],
     };
 
-    const formattedHistory = (history || []).map((msg: any) => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
-    }));
-    formattedHistory.push({ role: 'user', parts: [{ text: message }] });
+    // Validate and sanitize history items before sending to Gemini
+    const formattedHistory = (Array.isArray(history) ? history : [])
+      .filter(
+        (msg: unknown): msg is { role: string; content: string } =>
+          typeof msg === 'object' &&
+          msg !== null &&
+          typeof (msg as Record<string, unknown>).role === 'string' &&
+          typeof (msg as Record<string, unknown>).content === 'string'
+      )
+      .map((msg) => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+      }));
 
-    const courseTitle = currentCourseContext?.title || 'the subject at hand';
+    formattedHistory.push({ role: 'user', parts: [{ text: message.trim() }] });
+
+    const courseTitle = activeCourse?.title ?? 'the subject at hand';
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
@@ -405,17 +453,13 @@ app.post('/api/chat', async (req, res) => {
 
     let newFlashcardAdded = false;
     if (result.extractedConcept?.question) {
-      const courseId = currentCourseContext
-        ? courses.find((c) => c.title === currentCourseContext?.title)?.id
-        : undefined;
-
       flashcards.unshift({
-        id: Date.now(),
+        id: newId(),
         tag: result.extractedConcept.tag || 'Concept',
         q: result.extractedConcept.question,
         a: result.extractedConcept.answer || '',
         mastery: 0,
-        courseId,
+        courseId: activeCourse?.id,
         source: 'ai_chat',
       });
 

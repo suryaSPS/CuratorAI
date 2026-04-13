@@ -65,6 +65,8 @@ export default function Dashboard() {
     try {
       const response = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
       if (!response.ok) throw new Error('Upload failed');
+      // Notify Sidebar to refresh its course title
+      window.dispatchEvent(new CustomEvent('course-updated'));
       navigate('/sessions');
     } catch {
       alert('Failed to process PDF. Please try again.');

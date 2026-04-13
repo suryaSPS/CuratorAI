@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Download, Brain, Zap, MessageSquare, Layers, ArrowRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'motion/react';
 
 export default function Analytics() {
+  const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
@@ -192,7 +194,7 @@ export default function Analytics() {
           <div className="flex items-center justify-between mb-8">
             <h4 className="text-xl font-bold text-primary">Recently Extracted Concepts</h4>
             <button
-              onClick={() => (window.location.href = '/flashcards')}
+              onClick={() => navigate('/flashcards')}
               className="text-sm font-bold text-secondary flex items-center gap-1"
             >
               View All <ArrowRight className="w-4 h-4" />

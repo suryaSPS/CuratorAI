@@ -16,6 +16,7 @@ function ReviewMode({ cards, onExit }: { cards: any[]; onExit: (updatedCards: an
 
   const handleRating = async (rating: 'again' | 'hard' | 'easy') => {
     const delta = rating === 'again' ? -20 : rating === 'hard' ? 5 : 15;
+    const snapshot = localCards; // capture before optimistic update for rollback
 
     // Optimistic update locally
     const updated = localCards.map((c) =>
@@ -26,12 +27,20 @@ function ReviewMode({ cards, onExit }: { cards: any[]; onExit: (updatedCards: an
     setLocalCards(updated);
     setResults((prev) => [...prev, { rating, delta }]);
 
-    // Persist to backend
-    await fetch(`/api/flashcards/${card.id}/review`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating }),
-    }).catch(() => {});
+    // Persist to backend — revert if it fails
+    try {
+      const res = await fetch(`/api/flashcards/${card.id}/review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    } catch (err) {
+      console.error('Failed to save review rating — reverting', err);
+      setLocalCards(snapshot);
+      setResults((prev) => prev.slice(0, -1));
+      return; // don't advance to next card
+    }
 
     if (index + 1 >= localCards.length) {
       setDone(true);

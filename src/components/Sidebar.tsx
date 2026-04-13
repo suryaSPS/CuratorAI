@@ -26,13 +26,20 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const [courseTitle, setCourseTitle] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchCourse = () => {
     fetch('/api/context')
       .then((res) => res.json())
       .then((data) => {
-        if (data.course?.title) setCourseTitle(data.course.title);
+        setCourseTitle(data.course?.title ?? null);
       })
       .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchCourse();
+    // Re-fetch when a PDF is uploaded (Dashboard fires this event)
+    window.addEventListener('course-updated', fetchCourse);
+    return () => window.removeEventListener('course-updated', fetchCourse);
   }, []);
 
   return (

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, Bolt, Brain, FileText, Layout, User, Send, Paperclip, Link, Filter, AlertCircle, Star, Plus } from 'lucide-react';
+import { CheckCircle2, Bolt, Brain, User, Send, Paperclip, Star, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 
 export default function StudySession() {
   const [messages, setMessages] = useState([
-    { role: 'model', content: "Welcome to your study session. What would you like to focus on today?" }
+    { role: 'model', content: "Welcome to your study session. What would you like to focus on today?", isWelcome: true }
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +49,8 @@ export default function StudySession() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMsg,
-          history: messages
+          // Exclude the static welcome message — it's display-only, not part of the AI conversation
+          history: messages.filter((m) => !m.isWelcome)
         })
       });
 
@@ -203,11 +204,11 @@ export default function StudySession() {
             </span>
           </div>
           <div className="space-y-3">
-            {flashcards.map((card, i) => (
-              <motion.div 
+            {flashcards.map((card) => (
+              <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                key={i} 
+                key={card.id}
                 className="group relative p-5 rounded-2xl bg-surface-container-low hover:bg-white hover:shadow-xl hover:shadow-primary/5 transition-all border border-transparent hover:border-slate-100"
               >
                 <div className="flex justify-between items-start mb-3">
