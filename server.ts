@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 
 // --- Startup guard: fail fast if API key is missing ---
 if (!process.env.GEMINI_API_KEY) {
@@ -13,11 +15,27 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('INVALID_FILE_TYPE'));
+    }
+  },
+});
+
+// --- Rate limiter ---
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' },
 });
 
 // --- Types ---
@@ -27,6 +45,7 @@ interface Flashcard {
   q: string;
   a: string;
   mastery: number;
+  reviewCount: number;
   courseId?: number;
   source: 'ai_chat' | 'pdf' | 'manual';
 }
@@ -112,7 +131,7 @@ function computeCourseProgress(courseId: number): number {
 
 function getWeakAreas() {
   const lowMastery = flashcards
-    .filter((f) => f.mastery < 50)
+    .filter((f) => f.reviewCount > 0 && f.mastery < 50)
     .sort((a, b) => a.mastery - b.mastery);
 
   const tagMap: Record<string, { cards: Flashcard[]; avgMastery: number }> = {};
@@ -151,8 +170,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // GET /api/user
 app.get('/api/user', (_req, res) => {
   res.json({
-    name: process.env.USER_NAME || 'Learner',
-    tier: 'Pro Member',
+    name: process.env.USER_NAME?.trim() || null,
   });
 });
 
@@ -184,6 +202,7 @@ app.post('/api/flashcards', (req, res) => {
     q,
     a,
     mastery: 0,
+    reviewCount: 0,
     source: 'manual',
   };
   flashcards.unshift(newCard);
@@ -245,6 +264,24 @@ app.get('/api/weak-areas', (_req, res) => {
   res.json(getWeakAreas());
 });
 
+// PATCH /api/courses/:id/outline/:index — mark an outline item completed and activate the next
+app.patch('/api/courses/:id/outline/:index', (req, res) => {
+  const courseId = parseInt(req.params.id, 10);
+  const index = parseInt(req.params.index, 10);
+  if (isNaN(courseId) || isNaN(index)) return res.status(400).json({ error: 'Invalid id or index' });
+
+  const course = courses.find((c) => c.id === courseId);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  if (index < 0 || index >= course.outline.length) return res.status(404).json({ error: 'Outline item not found' });
+
+  course.outline[index].status = 'completed';
+  if (index + 1 < course.outline.length) {
+    course.outline[index + 1].status = 'active';
+  }
+
+  res.json({ outline: course.outline });
+});
+
 // PATCH /api/flashcards/:id/review — update mastery from a review rating
 app.patch('/api/flashcards/:id/review', (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -260,12 +297,26 @@ app.patch('/api/flashcards/:id/review', (req, res) => {
 
   const delta = rating === 'again' ? -20 : rating === 'hard' ? 5 : 15;
   card.mastery = Math.min(100, Math.max(0, card.mastery + delta));
+  card.reviewCount++;
 
   res.json(card);
 });
 
 // POST /api/upload-pdf — multimodal PDF synthesis
-app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
+app.post('/api/upload-pdf', apiLimiter, (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large (max 10MB).' });
+      }
+      if (err.message === 'INVALID_FILE_TYPE') {
+        return res.status(400).json({ error: 'Only PDF files are accepted.' });
+      }
+      return next(err);
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -321,12 +372,20 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
         responseMimeType: 'application/json',
         responseSchema: schema,
         temperature: 0.2,
+        maxOutputTokens: 8192,
       },
     });
 
     if (!response.text) throw new Error('Failed to generate content from PDF');
 
-    const result = JSON.parse(response.text);
+    let result: { title: string; outline: Array<{ title: string; description: string }>; flashcards: Array<{ tag: string; q: string; a: string }> };
+    try {
+      result = JSON.parse(response.text);
+    } catch (err) {
+      console.error('Failed to parse model JSON:', err);
+      return res.status(502).json({ error: 'The AI returned a malformed response. Please try again.' });
+    }
+
     const courseId = newId();
 
     const newCourse: Course = {
@@ -351,6 +410,7 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
         q: f.q,
         a: f.a || '',
         mastery: 0,
+        reviewCount: 0,
         courseId,
         source: 'pdf' as const,
       })
@@ -367,7 +427,7 @@ app.post('/api/upload-pdf', upload.single('file'), async (req, res) => {
 });
 
 // POST /api/chat — Socratic tutor with autonomous concept extraction
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', apiLimiter, async (req, res) => {
   try {
     const { message, history } = req.body;
 
@@ -444,30 +504,40 @@ app.post('/api/chat', async (req, res) => {
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
         temperature: 0.7,
+        maxOutputTokens: 8192,
       },
     });
 
     if (!response.text) throw new Error('No response from AI');
 
-    const result = JSON.parse(response.text);
+    let result: { reply: string; extractedConcept?: { tag: string; question: string; answer: string } | null };
+    try {
+      result = JSON.parse(response.text);
+    } catch (err) {
+      console.error('Failed to parse model JSON:', err);
+      return res.status(502).json({ error: 'The AI returned a malformed response. Please try again.' });
+    }
 
     let newFlashcardAdded = false;
+    let newCard: Flashcard | null = null;
     if (result.extractedConcept?.question) {
-      flashcards.unshift({
+      newCard = {
         id: newId(),
         tag: result.extractedConcept.tag || 'Concept',
         q: result.extractedConcept.question,
         a: result.extractedConcept.answer || '',
         mastery: 0,
+        reviewCount: 0,
         courseId: activeCourse?.id,
         source: 'ai_chat',
-      });
+      };
+      flashcards.unshift(newCard);
 
       studyEvents.push({ type: 'concept_extracted', timestamp: new Date().toISOString() });
       newFlashcardAdded = true;
     }
 
-    res.json({ reply: result.reply, newFlashcardAdded, flashcards });
+    res.json({ reply: result.reply, newFlashcardAdded, newFlashcard: newFlashcardAdded ? newCard : null });
   } catch (error) {
     console.error('Chat API Error:', error);
     res.status(500).json({ error: 'Failed to generate response' });
@@ -478,6 +548,7 @@ app.post('/api/chat', async (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
+      configLoader: 'native',
       server: { middlewareMode: true },
       appType: 'spa',
     });
