@@ -1,40 +1,71 @@
-export type SessionProvider = 'password' | 'google';
-
-export type LocalSession = {
+export type Account = {
+  id: string;
   username: string;
-  provider: SessionProvider;
-  startedAt: string;
+  email: string | null;
+  plan: 'free' | 'student' | 'pro';
+  creditBalance: number;
+  privacyAcceptedAt: string | null;
+  createdAt: string;
 };
 
-const SESSION_KEY = 'curator-local-session';
 const SESSION_EVENT = 'curator-session-changed';
 
-export function getLocalSession(): LocalSession | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const value = window.sessionStorage.getItem(SESSION_KEY);
-    if (!value) return null;
-    const session = JSON.parse(value) as LocalSession;
-    return typeof session.username === 'string' && typeof session.provider === 'string' && typeof session.startedAt === 'string'
-      ? session
-      : null;
-  } catch {
-    return null;
-  }
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    ...options,
+  });
+  const body = await response.json().catch(() => ({})) as T & { error?: string };
+  if (!response.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
+  return body;
 }
 
-export function startLocalSession(username: string, provider: SessionProvider) {
-  const session: LocalSession = { username: username.trim(), provider, startedAt: new Date().toISOString() };
-  window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  window.dispatchEvent(new Event(SESSION_EVENT));
-  return session;
+export async function getSession() {
+  const response = await fetch('/api/auth/session', { credentials: 'same-origin' });
+  if (!response.ok) return null;
+  const body = await response.json() as { user: Account | null };
+  return body.user;
+}
+
+export async function register(username: string, password: string) {
+  const body = await request<{ user: Account }>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  announceSessionChange();
+  return body.user;
+}
+
+export async function signIn(username: string, password: string) {
+  const body = await request<{ user: Account }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+  announceSessionChange();
+  return body.user;
+}
+
+export async function signInWithGoogle(credential: string) {
+  const body = await request<{ user: Account }>('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ credential }),
+  });
+  announceSessionChange();
+  return body.user;
+}
+
+export async function signOut() {
+  const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  if (!response.ok) throw new Error('Could not sign out. Please try again.');
+  announceSessionChange();
 }
 
 export function subscribeToSession(listener: () => void) {
   window.addEventListener(SESSION_EVENT, listener);
-  window.addEventListener('storage', listener);
-  return () => {
-    window.removeEventListener(SESSION_EVENT, listener);
-    window.removeEventListener('storage', listener);
-  };
+  return () => window.removeEventListener(SESSION_EVENT, listener);
+}
+
+export function announceSessionChange() {
+  window.dispatchEvent(new Event(SESSION_EVENT));
 }

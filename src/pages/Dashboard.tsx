@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [weakAreas, setWeakAreas] = useState<WeakArea[]>([]);
   const [context, setContext] = useState<Context>({ course: null, flashcards: [], sessionCount: 0 });
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [quality, setQuality] = useState<'standard' | 'deep'>('standard');
 
   useEffect(() => {
     fetch('/api/user').then((r) => r.json()).then(setUser).catch(() => undefined);
@@ -35,13 +36,15 @@ export default function Dashboard() {
     setUploadError(null);
     const body = new FormData();
     body.append('file', file);
+    body.append('quality', quality);
     try {
       const response = await fetch('/api/upload-pdf', { method: 'POST', body });
-      if (!response.ok) throw new Error('Upload failed');
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error || 'Upload failed');
       window.dispatchEvent(new CustomEvent('course-updated'));
       navigate('/sessions');
-    } catch {
-      setUploadError('The PDF could not be processed. Check the file and try again.');
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'The PDF could not be processed. Check the file and try again.');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -100,16 +103,17 @@ export default function Dashboard() {
             </div>
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-mint text-ink"><WandSparkles size={20} /></div>
           </div>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">A single PDF gives Curator the context to organize your study path and draw out testable concepts.</p>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">A single PDF gives Curator the context to organize your study path and draw out testable concepts. Its source file is held in your private workspace.</p>
           <div className="mt-7 flex flex-col items-start justify-between gap-4 rounded-2xl border border-dashed border-ink/20 bg-mist/65 p-5 sm:flex-row sm:items-center">
             <div className="flex items-center gap-3">
               <div className="grid h-11 w-11 place-items-center rounded-xl bg-white text-ink shadow-sm"><FileUp size={20} /></div>
-              <div><p className="text-sm font-extrabold text-ink">Choose a PDF</p><p className="mt-0.5 text-xs text-slate-500">Up to 10 MB · processed in this session</p></div>
+              <div><p className="text-sm font-extrabold text-ink">Choose a PDF</p><p className="mt-0.5 text-xs text-slate-500">Up to 10 MB · private account storage</p></div>
             </div>
             <button className="button-primary" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
               {isUploading ? <><Loader2 className="animate-spin" size={17} />Reading it</> : <><Upload size={17} />Upload</>}
             </button>
           </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2"><span className="mr-1 font-mono text-[9px] uppercase tracking-wider text-slate-500">Model quality</span><button type="button" onClick={() => setQuality('standard')} className={`rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider ${quality === 'standard' ? 'border-ink bg-ink text-white' : 'border-line text-slate-500'}`}>Standard · Flash</button><button type="button" onClick={() => setQuality('deep')} className={`rounded-full border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider ${quality === 'deep' ? 'border-ink bg-ink text-white' : 'border-line text-slate-500'}`}>Deep · Pro</button><span className="text-xs text-slate-500">Deep analysis uses more credits.</span></div>
           {uploadError && <p className="mt-3 text-sm font-semibold text-red-700" role="alert">{uploadError}</p>}
         </section>
 

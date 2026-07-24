@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
 type GoogleCredentialResponse = { credential?: string };
-type GoogleProfile = { username: string };
 
 declare global {
   interface Window {
@@ -21,22 +20,7 @@ type ViteImportMeta = ImportMeta & { env: Record<string, string | undefined> };
 const GOOGLE_CLIENT_ID = (import.meta as ViteImportMeta).env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_SCRIPT_ID = 'google-identity-services';
 
-function getGoogleName(credential?: string) {
-  if (!credential) return 'Google learner';
-  try {
-    const encodedPayload = credential.split('.')[1];
-    if (!encodedPayload) return 'Google learner';
-    const decodedPayload = atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/'));
-    const profile = JSON.parse(decodedPayload) as { name?: unknown; email?: unknown };
-    if (typeof profile.name === 'string' && profile.name.trim()) return profile.name.trim();
-    if (typeof profile.email === 'string' && profile.email.trim()) return profile.email.trim().split('@')[0];
-  } catch {
-    // The identity token is never treated as a credential by the frontend.
-  }
-  return 'Google learner';
-}
-
-export default function GoogleSignIn({ onSuccess }: { onSuccess: (profile: GoogleProfile) => void }) {
+export default function GoogleSignIn({ onSuccess, disabled = false }: { onSuccess: (credential: string) => void; disabled?: boolean }) {
   const buttonRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState('');
 
@@ -47,7 +31,9 @@ export default function GoogleSignIn({ onSuccess }: { onSuccess: (profile: Googl
       if (cancelled || !buttonRef.current || !window.google?.accounts?.id) return;
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: (response) => onSuccess({ username: getGoogleName(response.credential) }),
+        callback: (response) => {
+          if (response.credential && !disabled) onSuccess(response.credential);
+        },
       });
       buttonRef.current.replaceChildren();
       window.google.accounts.id.renderButton(buttonRef.current, {
@@ -73,11 +59,11 @@ export default function GoogleSignIn({ onSuccess }: { onSuccess: (profile: Googl
     }
 
     return () => { cancelled = true; };
-  }, [onSuccess]);
+  }, [disabled, onSuccess]);
 
   if (!GOOGLE_CLIENT_ID) {
     return <div className="google-auth">
-      <button type="button" className="google-auth-button" onClick={() => setMessage('Add VITE_GOOGLE_CLIENT_ID to .env, then restart the server to enable Google sign-in.')}>
+      <button type="button" className="google-auth-button" disabled={disabled} onClick={() => setMessage('Add both VITE_GOOGLE_CLIENT_ID and GOOGLE_CLIENT_ID to .env, then restart the server to enable verified Google sign-in.')}>
         <span className="google-auth-glyph" aria-hidden="true">G</span>Continue with Google
       </button>
       {message && <p className="google-auth-message" role="status">{message}</p>}
