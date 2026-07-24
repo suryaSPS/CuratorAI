@@ -90,6 +90,7 @@ cp .env.example .env
 # Edit .env and set:
 #   GEMINI_API_KEY=your_key_here
 #   USER_NAME="Your Name"
+#   VITE_GOOGLE_CLIENT_ID="your-google-oauth-client-id" # optional; enables Google sign-in
 
 # 3. Run
 npm run dev
@@ -105,6 +106,13 @@ npm run dev
 | `GEMINI_API_KEY` | Yes | Google Gemini API key — used server-side only, never exposed to the client |
 | `USER_NAME` | No | Your display name in the app (default: `Learner`) |
 | `APP_URL` | No | Deployment URL for self-referential links |
+| `VITE_GOOGLE_CLIENT_ID` | No | Public Google OAuth Web client ID used by the browser-only Google sign-in button |
+
+### Local session and Google sign-in
+
+Curator opens at the sign-in page by default. The username/password path creates a session held in `sessionStorage`, so it lasts only for the current browser tab. It is a frontend access gate, not production authentication: this project has no user database or password verification service.
+
+To enable the Google button, create a Google OAuth **Web application** client, set `VITE_GOOGLE_CLIENT_ID`, and register the appropriate development/production origins. Google Identity Services handles the account picker; production deployments should verify the returned ID token on the server before granting access.
 
 ---
 
