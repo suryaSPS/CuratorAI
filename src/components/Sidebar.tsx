@@ -7,8 +7,8 @@ import {
   BarChart3,
   Settings,
   HelpCircle,
-  PlusCircle,
-  Sparkles,
+  Plus,
+  Orbit,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -43,56 +43,53 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 z-50 bg-slate-100 flex flex-col py-8 px-4 gap-y-4 border-r border-slate-200">
-      <div className="mb-8 px-2 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center overflow-hidden">
-          <Sparkles className="text-secondary-container w-6 h-6" />
-        </div>
-        <div>
-          <h2 className="text-lg font-black text-primary tracking-tighter leading-none">Curator AI</h2>
-          <p
-            className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 truncate max-w-[130px]"
-            title={courseTitle ?? undefined}
-          >
-            {courseTitle ?? 'No active course'}
-          </p>
+    <aside className="nav-rail">
+      <div className="mb-9 flex items-center gap-3 px-2">
+        <div className="brand-mark" aria-hidden="true" />
+        <div className="min-w-0">
+          <h2 className="font-display text-lg font-bold tracking-[-.06em] leading-none text-ink">Curator</h2>
+          {courseTitle && (
+            <p
+              className="mt-1 truncate font-mono text-[9px] uppercase tracking-[.08em] text-slate-500"
+              title={courseTitle}
+            >
+              {courseTitle}
+            </p>
+          )}
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1">
+      <nav className="flex-1 space-y-1" aria-label="Primary navigation">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ease-out font-headline text-sm tracking-wide uppercase font-bold',
-                isActive
-                  ? 'text-cyan-700 border-r-4 border-cyan-600 bg-white/50'
-                  : 'text-slate-500 hover:text-cyan-600 hover:pl-6'
+                `nav-link ${isActive ? 'active' : ''}`
               )
             }
           >
-            <item.icon className="w-5 h-5" />
+            <item.icon size={18} />
             {item.label}
           </NavLink>
         ))}
       </nav>
 
-      <div className="mt-auto pt-6 space-y-4">
+      <div className="mt-auto space-y-3 border-t border-line pt-5">
         <button
           onClick={() => navigate('/sessions')}
-          className="w-full bg-primary-container text-white py-3 rounded-xl font-bold text-sm tracking-wider uppercase shadow-lg shadow-primary-container/20 flex items-center justify-center gap-2 hover:scale-[0.98] transition-transform"
+          className="button-primary w-full"
         >
-          <PlusCircle className="w-4 h-4" />
-          New Session
+          <Plus size={17} />
+          Start studying
         </button>
         <NavLink
           to="/help"
-          className="flex items-center gap-3 px-4 py-3 text-slate-500 font-headline text-sm tracking-wide uppercase font-bold hover:text-cyan-600 transition-all"
+          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >
-          <HelpCircle className="w-5 h-5" />
-          Help Center
+          <Orbit size={18} />
+          How it works
         </NavLink>
       </div>
     </aside>
