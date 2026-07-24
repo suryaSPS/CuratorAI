@@ -1,76 +1,15 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { BookOpen, Clock, ChevronRight, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, BookOpen, Clock3, FileUp, Layers3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+type Subject = { id: number; name: string; progress: number; totalMessages: number; lastActive: string };
+
 export default function Subjects() {
-  const [subjects, setSubjects] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    fetch('/api/subjects')
-      .then(res => res.json())
-      .then(data => setSubjects(data))
-      .catch(err => console.error("Failed to load subjects", err));
-  }, []);
-
-  return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-primary mb-2">Curated Subjects</h1>
-          <p className="text-on-surface-variant max-w-md leading-relaxed">
-            Your active learning roadmaps and mastery progression.
-          </p>
-        </div>
-        <button className="px-6 py-3 bg-primary text-white rounded-xl font-bold flex items-center gap-2 transition-transform hover:scale-95 duration-150 shadow-lg shadow-primary/20">
-          <Plus className="w-5 h-5" />
-          Add Subject
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {subjects.map((subject, i) => (
-          <motion.div 
-            key={subject.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            onClick={() => navigate('/sessions')}
-            className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:border-secondary/30 hover:shadow-xl hover:shadow-primary/5 transition-all cursor-pointer group"
-          >
-            <div className="flex justify-between items-start mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-surface-container-low flex items-center justify-center text-primary group-hover:bg-secondary/10 group-hover:text-secondary transition-colors">
-                <BookOpen className="w-6 h-6" />
-              </div>
-              <span className="text-[10px] font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-lg uppercase tracking-widest group-hover:bg-secondary/10 group-hover:text-secondary transition-colors">
-                {subject.progress}% Mastered
-              </span>
-            </div>
-            
-            <h3 className="text-xl font-bold text-primary mb-2">{subject.name}</h3>
-            
-            <div className="flex items-center gap-4 text-xs font-medium text-slate-500 mb-6">
-              <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {subject.totalHours}h invested</span>
-              <span>•</span>
-              <span>Active {subject.lastActive}</span>
-            </div>
-
-            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
-              <div 
-                className="h-full bg-secondary rounded-full transition-all duration-1000" 
-                style={{ width: `${subject.progress}%` }}
-              ></div>
-            </div>
-
-            <div className="flex justify-end">
-              <span className="text-sm font-bold text-secondary flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Continue <ChevronRight className="w-4 h-4" />
-              </span>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
+  useEffect(() => { fetch('/api/subjects').then((r) => r.json()).then(setSubjects).catch(() => undefined); }, []);
+  return <div className="page page-enter space-y-6">
+    <section className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="eyebrow">Course shelf</p><h1 className="display-title mt-4 text-5xl sm:text-6xl">Learning maps.</h1><p className="mt-4 max-w-xl text-sm leading-7 text-slate-600">Each source becomes a course with its own outline, conversations, and mastery signal.</p></div><button className="button-primary" onClick={() => navigate('/')}><FileUp size={17} />Add a source</button></section>
+    {subjects.length ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{subjects.map((subject, index) => <article key={subject.id} className="panel group p-6"><div className="flex items-start justify-between"><div className={`grid h-12 w-12 place-items-center rounded-2xl ${index % 3 === 0 ? 'bg-sun' : index % 3 === 1 ? 'bg-mint' : 'bg-sky/40'} text-ink`}><BookOpen size={21} /></div><span className="font-mono text-[10px] text-slate-500">{subject.progress}%</span></div><h2 className="mt-10 text-2xl font-display font-bold tracking-[-.055em] text-ink">{subject.name}</h2><div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500"><span className="flex items-center gap-1.5"><Clock3 size={13} />Active {subject.lastActive}</span><span className="flex items-center gap-1.5"><Layers3 size={13} />{subject.totalMessages} messages</span></div><div className="progress-track mt-7"><div className="progress-fill" style={{ width: `${subject.progress}%` }} /></div><button onClick={() => navigate('/sessions')} className="mt-5 flex items-center gap-2 text-sm font-extrabold text-ink underline decoration-sky decoration-4 underline-offset-4">Open course <ArrowRight size={16} /></button></article>)}</section> : <section className="panel mx-auto max-w-2xl p-8 text-center sm:p-12"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-sun text-ink"><BookOpen size={25} /></div><h2 className="mt-6 font-display text-3xl font-bold tracking-[-.06em] text-ink">Your first map starts with a source.</h2><p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-600">Upload a PDF from the dashboard. Curator will turn it into an outline you can explore.</p><button className="button-primary mt-7" onClick={() => navigate('/')}><FileUp size={17} />Go to sources</button></section>}
+  </div>;
 }
