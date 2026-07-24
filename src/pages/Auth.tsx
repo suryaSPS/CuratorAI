@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowLeft,
@@ -14,10 +14,10 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
 import GoogleSignIn from '../components/GoogleSignIn';
-import { getLocalSession, startLocalSession } from '../lib/auth';
+import { getSession, register, signIn, signInWithGoogle } from '../lib/auth';
 
 type AuthMode = 'signup' | 'login';
 type FieldName = 'username' | 'password' | 'agree';
@@ -57,10 +57,22 @@ export default function Auth() {
   const [activeStep, setActiveStep] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [touched, setTouched] = useState<Record<FieldName, boolean>>({ username: false, password: false, agree: false });
   const [values, setValues] = useState({ username: '', password: '', agree: false });
   const nextPath = getNextPath(searchParams.get('next'));
-  const existingSession = getLocalSession();
+
+  useEffect(() => {
+    let current = true;
+    getSession().then((session) => {
+      if (!current) return;
+      if (session) navigate(nextPath, { replace: true });
+      else setCheckingSession(false);
+    });
+    return () => { current = false; };
+  }, [navigate, nextPath]);
 
   const errors = useMemo(() => ({
     username: mode === 'signup' && values.username.trim().length < 3 ? 'Use at least three characters.' : mode === 'login' && !values.username.trim() ? 'Enter your username.' : '',
@@ -76,22 +88,44 @@ export default function Auth() {
   const changeMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setSubmitted(false);
+    setAuthError(null);
     setTouched({ username: false, password: false, agree: false });
   };
-  const startSession = useCallback((username: string, provider: 'password' | 'google') => {
-    startLocalSession(username, provider);
+  const finishAuthentication = useCallback(() => {
     navigate(nextPath, { replace: true });
   }, [navigate, nextPath]);
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSubmitted(true);
+    setAuthError(null);
     setTouched({ username: true, password: true, agree: true });
     if (Object.values(errors).some(Boolean)) return;
-    startSession(values.username, 'password');
+    setIsSubmitting(true);
+    try {
+      if (mode === 'signup') await register(values.username, values.password);
+      else await signIn(values.username, values.password);
+      finishAuthentication();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'We could not complete your sign-in.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+  const authenticateGoogle = useCallback(async (credential: string) => {
+    setAuthError(null);
+    setIsSubmitting(true);
+    try {
+      await signInWithGoogle(credential);
+      finishAuthentication();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Google sign-in did not complete.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [finishAuthentication]);
   const shouldShow = (field: FieldName) => (submitted || touched[field]) && Boolean(errors[field]);
 
-  if (existingSession) return <Navigate to={nextPath} replace />;
+  if (checkingSession) return <main className="auth-page app-background grid place-items-center"><div className="rounded-full border border-line bg-paper px-5 py-3 font-mono text-[10px] uppercase tracking-[.12em] text-slate-500">Checking your secure session</div></main>;
 
   return (
     <main className="auth-page app-background">
@@ -109,7 +143,7 @@ export default function Auth() {
             <div className="auth-form-heading">
               <p className="eyebrow">A space for your own material</p>
               <h1>{mode === 'signup' ? 'Make a little room to think.' : 'Welcome back to your orbit.'}</h1>
-              <p>{mode === 'signup' ? 'Start with what you are already reading. Curator turns it into a study space that stays with you.' : 'Sign in to open the learning space you were using in this browser tab.'}</p>
+              <p>{mode === 'signup' ? 'Start with what you are already reading. Curator turns it into a study space that stays with you.' : 'Sign in to open your saved learning space on any of your devices.'}</p>
             </div>
 
             <div className="auth-mode-switch" aria-label="Authentication mode">
@@ -119,19 +153,20 @@ export default function Auth() {
 
             <AnimatePresence mode="wait" initial={false}>
               <motion.div key={mode} initial={{ opacity: 0, x: mode === 'signup' ? -10 : 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: mode === 'signup' ? 10 : -10 }} transition={{ duration: .22, ease: 'easeOut' }} className="mt-7">
-                <GoogleSignIn onSuccess={({ username }) => startSession(username, 'google')} />
+                <GoogleSignIn onSuccess={authenticateGoogle} disabled={isSubmitting} />
                 <div className="auth-divider"><span>or use a username</span></div>
                 <form className="space-y-4" onSubmit={submit} noValidate>
                   <label className="auth-field">Username<input value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} onBlur={() => markTouched('username')} autoComplete="username" placeholder={mode === 'signup' ? 'Choose a username' : 'Enter your username'} aria-invalid={shouldShow('username')} aria-describedby={shouldShow('username') ? 'username-error' : undefined} />{shouldShow('username') && <span id="username-error" className="auth-field-error">{errors.username}</span>}</label>
                   <label className="auth-field">Password<span className="auth-password-wrap"><input value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} onBlur={() => markTouched('password')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} type={showPassword ? 'text' : 'password'} placeholder={mode === 'signup' ? 'Create a password' : 'Enter your password'} aria-invalid={shouldShow('password')} aria-describedby={shouldShow('password') ? 'password-error' : undefined} /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></span>{mode === 'signup' && values.password && <span className="auth-password-meter" aria-label={`Password strength ${passwordScore} out of 4`}><i className={passwordScore >= 1 ? 'active' : ''} /><i className={passwordScore >= 2 ? 'active' : ''} /><i className={passwordScore >= 3 ? 'active' : ''} /><i className={passwordScore >= 4 ? 'active' : ''} /></span>}{shouldShow('password') && <span id="password-error" className="auth-field-error">{errors.password}</span>}</label>
-                  {mode === 'signup' && <label className="auth-check"><input checked={values.agree} onChange={(event) => setValues({ ...values, agree: event.target.checked })} onBlur={() => markTouched('agree')} type="checkbox" aria-invalid={shouldShow('agree')} /><span aria-hidden="true">{values.agree && <Check size={13} />}</span><small>I understand this browser-only session ends when I close this tab.</small></label>}
+                  {mode === 'signup' && <label className="auth-check"><input checked={values.agree} onChange={(event) => setValues({ ...values, agree: event.target.checked })} onBlur={() => markTouched('agree')} type="checkbox" aria-invalid={shouldShow('agree')} /><span aria-hidden="true">{values.agree && <Check size={13} />}</span><small>I understand Curator stores my account and sources privately so my workspace persists beyond this browser.</small></label>}
                   {shouldShow('agree') && <p className="auth-field-error -mt-2">{errors.agree}</p>}
-                  <button className="button-primary mt-2 w-full" type="submit">{mode === 'signup' ? 'Create local session' : 'Sign in to Curator'} <ArrowRight size={16} /></button>
+                  {authError && <p className="auth-field-error -mt-2" role="alert">{authError}</p>}
+                  <button className="button-primary mt-2 w-full" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Securing your space…' : mode === 'signup' ? 'Create secure account' : 'Sign in to Curator'} <ArrowRight size={16} /></button>
                 </form>
               </motion.div>
             </AnimatePresence>
 
-            <div className="auth-assurance"><LockKeyhole size={15} /><span>Access is remembered only in this browser tab with session storage.</span></div>
+            <div className="auth-assurance"><LockKeyhole size={15} /><span>Passwords are hashed; your session is an opaque, HTTP-only cookie.</span></div>
           </motion.div>
         </div>
 
@@ -141,7 +176,7 @@ export default function Auth() {
             <div className="auth-orbit auth-orbit-outer"><span className="auth-orbit-node auth-node-sun" /></div>
             <div className="auth-orbit auth-orbit-middle"><span className="auth-orbit-node auth-node-sky" /></div>
             <div className="auth-orbit auth-orbit-inner"><span className="auth-orbit-node auth-node-mint" /></div>
-            <div className="auth-core"><Orbit size={44} /><span>YOUR<br />MATERIAL</span></div>
+            <div className="auth-core"><div className="auth-core-content"><Orbit size={44} /><span>YOUR<br />MATERIAL</span></div></div>
             <div className="auth-float-card auth-float-source"><FileText size={17} /><span>Source</span></div>
             <div className="auth-float-card auth-float-deck"><Sparkles size={17} /><span>Deck</span></div>
           </div>

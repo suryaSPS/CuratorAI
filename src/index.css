@@ -186,8 +186,10 @@ html[data-theme='dark'] .bg-slate-400 { background-color: #8f9bb2; }
 .auth-orbit-middle .auth-orbit-node { top: 22%; left: 4%; }
 .auth-orbit-inner .auth-orbit-node { top: 1%; right: 28%; }
 .auth-node-sun { background: var(--color-sun); }.auth-node-sky { background: var(--color-sky); }.auth-node-mint { background: var(--color-mint); }
-.auth-core { position: absolute; inset: 50% auto auto 50%; width: 138px; height: 138px; display: grid; place-content: center; gap: .45rem; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle at 35% 20%, #343e5e, #121725 68%); color: var(--color-sun); text-align: center; box-shadow: 0 0 0 17px rgba(255,212,107,.08), 0 22px 50px rgba(0,0,0,.32); }
-.auth-core span { color: rgba(255,255,255,.9); font-family: var(--font-mono); font-size: .58rem; font-weight: 500; letter-spacing: .12em; line-height: 1.35; text-transform: uppercase; }
+.auth-core { position: absolute; inset: 50% auto auto 50%; width: 138px; height: 138px; display: grid; place-items: center; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle at 35% 20%, #343e5e, #121725 68%); color: var(--color-sun); text-align: center; box-shadow: 0 0 0 17px rgba(255,212,107,.08), 0 22px 50px rgba(0,0,0,.32); }
+.auth-core-content { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .48rem; transform: translateY(-1px); }
+.auth-core-content svg { display: block; flex: 0 0 auto; }
+.auth-core span { display: block; color: rgba(255,255,255,.9); font-family: var(--font-mono); font-size: .58rem; font-weight: 650; letter-spacing: .12em; line-height: 1.35; text-transform: uppercase; }
 .auth-float-card { position: absolute; display: flex; align-items: center; gap: .55rem; padding: .65rem .75rem; border: 1px solid rgba(255,255,255,.16); border-radius: 1rem; background: rgba(255,255,255,.1); box-shadow: 0 14px 30px rgba(0,0,0,.18); backdrop-filter: blur(9px); color: rgba(255,255,255,.9); font-family: var(--font-mono); font-size: .62rem; letter-spacing: .06em; text-transform: uppercase; }
 .auth-float-source { left: 0; top: 23%; color: var(--color-sun); animation: auth-float 5.4s ease-in-out infinite; }.auth-float-deck { right: 0; bottom: 19%; color: var(--color-mint); animation: auth-float 5.4s ease-in-out -2.5s infinite; }
 .auth-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; }
