@@ -1,377 +1,147 @@
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  PlayCircle,
-  BookOpen,
-  Timer,
-  Brain,
-  Zap,
-  Plus,
-  UploadCloud,
-  FileText,
-  Loader2,
-  Sparkles,
-  AlertTriangle,
-} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { motion } from 'motion/react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
+import { ArrowRight, BookOpen, BrainCircuit, FileUp, Layers3, Loader2, MessageCircle, Sparkles, Upload, WandSparkles } from 'lucide-react';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+
+type Subject = { id: number; name: string; progress: number; totalMessages: number; lastActive: string };
+type WeakArea = { tag: string; avgMastery: number; topQuestion: string };
+type Course = { title: string; outline: Array<{ title: string; description: string; status: string }> };
+type Context = { course: Course | null; flashcards: Array<{ id: number }>; sessionCount: number };
+type Activity = { name: string; messages: number; concepts: number };
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [isUploading, setIsUploading] = useState(false);
-  const [user, setUser] = useState<{ name: string } | null>(null);
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [activityData, setActivityData] = useState<any[]>([]);
-  const [weakAreas, setWeakAreas] = useState<any[]>([]);
-  const [currentCourse, setCurrentCourse] = useState<any>(null);
+  const [user, setUser] = useState<{ name: string | null } | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  const [weakAreas, setWeakAreas] = useState<WeakArea[]>([]);
+  const [context, setContext] = useState<Context>({ course: null, flashcards: [], sessionCount: 0 });
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/user')
-      .then((r) => r.json())
-      .then(setUser)
-      .catch(() => {});
-
-    fetch('/api/subjects')
-      .then((r) => r.json())
-      .then(setSubjects)
-      .catch(() => {});
-
-    fetch('/api/analytics')
-      .then((r) => r.json())
-      .then((data) => setActivityData(data.studyTimeData ?? []))
-      .catch(() => {});
-
-    fetch('/api/weak-areas')
-      .then((r) => r.json())
-      .then(setWeakAreas)
-      .catch(() => {});
-
-    fetch('/api/context')
-      .then((r) => r.json())
-      .then((data) => setCurrentCourse(data.course))
-      .catch(() => {});
+    fetch('/api/user').then((r) => r.json()).then(setUser).catch(() => undefined);
+    fetch('/api/subjects').then((r) => r.json()).then(setSubjects).catch(() => undefined);
+    fetch('/api/analytics').then((r) => r.json()).then((data) => setActivity(data.studyTimeData ?? [])).catch(() => undefined);
+    fetch('/api/weak-areas').then((r) => r.json()).then(setWeakAreas).catch(() => undefined);
+    fetch('/api/context').then((r) => r.json()).then(setContext).catch(() => undefined);
   }, []);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
     setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
+    setUploadError(null);
+    const body = new FormData();
+    body.append('file', file);
     try {
-      const response = await fetch('/api/upload-pdf', { method: 'POST', body: formData });
+      const response = await fetch('/api/upload-pdf', { method: 'POST', body });
       if (!response.ok) throw new Error('Upload failed');
-      // Notify Sidebar to refresh its course title
       window.dispatchEvent(new CustomEvent('course-updated'));
       navigate('/sessions');
     } catch {
-      alert('Failed to process PDF. Please try again.');
+      setUploadError('The PDF could not be processed. Check the file and try again.');
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const topSubjects = subjects.slice(0, 2);
+  const course = context.course;
+  const activeOutline = course?.outline.find((item) => item.status === 'active');
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
-      {/* Welcome Section */}
-      <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-primary mb-2">
-            Welcome Back, {user?.name ?? '...'}.
+    <div className="page page-enter space-y-5">
+      <section className="panel-dark min-h-[350px] p-6 sm:p-9 lg:p-12">
+        <div className="orbital -right-[10%] -top-[32%] w-[430px] opacity-70" />
+        <div className="orbital -right-[1%] top-[20%] w-[255px] opacity-50" />
+        <div className="relative max-w-2xl">
+          <p className="eyebrow text-white/70 before:bg-mint">Your learning observatory</p>
+          <h1 className="mt-5 max-w-xl font-display text-4xl font-bold leading-[.95] tracking-[-.07em] text-white sm:text-6xl">
+            {course ? `Return to ${course.title}.` : user?.name ? `A clear space to learn, ${user.name}.` : 'Make room for what you want to know.'}
           </h1>
-          <p className="text-on-surface-variant max-w-md leading-relaxed">
-            {currentCourse ? (
-              <>
-                You're currently studying{' '}
-                <span className="text-secondary font-semibold">{currentCourse.title}</span>. Shall we
-                continue?
-              </>
-            ) : (
-              <>Upload a PDF below to create your first personalized course.</>
-            )}
+          <p className="mt-5 max-w-xl text-sm font-medium leading-7 text-white/90 sm:text-base">
+            {course
+              ? activeOutline ? `Your active thread: ${activeOutline.title}.` : 'Your course is ready whenever you are.'
+              : 'Bring in a PDF, then Curator turns the material into a course, a conversation, and a deck you can actually use.'}
           </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button className="button-primary !border-[#111522]/20 !bg-sun !text-[#111522] !shadow-[0_6px_0_#ff9c7a] hover:!bg-[#ffe08b]" onClick={() => course ? navigate('/sessions') : fileInputRef.current?.click()}>
+              {course ? <><Sparkles size={17} />Continue the thread</> : <><Upload size={17} />Add a source</>}
+            </button>
+            <button className="button-secondary !border-white/35 !bg-white/10 !text-white hover:!bg-white/20" onClick={() => navigate('/flashcards')}>
+              <BookOpen size={17} />Open deck
+            </button>
+          </div>
         </div>
-        <div className="flex gap-4">
-          <button
-            onClick={() => navigate('/sessions')}
-            className="px-6 py-3 bg-gradient-to-r from-primary-container to-primary text-white rounded-xl font-bold flex items-center gap-2 transition-transform hover:scale-95 duration-150 shadow-lg shadow-primary/20"
-          >
-            <PlayCircle className="w-5 h-5" />
-            Start New Session
-          </button>
-          <button
-            onClick={() => navigate('/flashcards')}
-            className="px-6 py-3 bg-white text-primary border border-slate-200 rounded-xl font-bold flex items-center gap-2 transition-transform hover:scale-95 duration-150 shadow-sm"
-          >
-            <BookOpen className="w-5 h-5" />
-            Review Flashcards
-          </button>
+        <div className="relative mt-10 grid max-w-2xl grid-cols-3 gap-px overflow-hidden rounded-2xl border border-white/12 bg-white/12 sm:mt-14">
+          {[
+            ['Courses', subjects.length],
+            ['Cards', context.flashcards.length],
+            ['Sessions', context.sessionCount],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="bg-[#1b2235]/60 px-3 py-4 sm:px-5">
+              <p className="font-mono text-[9px] uppercase tracking-[.12em] text-white/55">{label}</p>
+              <p className="mt-1 font-display text-2xl font-bold tracking-[-.06em] text-white">{value}</p>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* Grid Layout */}
-      <div className="grid grid-cols-12 gap-8 items-start">
-        {/* Main Column */}
-        <div className="col-span-12 lg:col-span-8 space-y-8">
+      <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={handleUpload} />
 
-          {/* PDF Upload */}
-          <div className="bg-gradient-to-br from-secondary-container/20 to-transparent p-8 rounded-3xl border border-secondary/20 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-secondary/10 rounded-full blur-3xl -z-10"></div>
-            <div className="flex flex-col md:flex-row items-center gap-8">
-              <div className="flex-1">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-secondary/10 text-secondary rounded-full text-[10px] font-bold uppercase tracking-widest mb-4 border border-secondary/20">
-                  <Sparkles className="w-3 h-3" /> Multimodal AI
-                </div>
-                <h3 className="text-2xl font-bold text-primary mb-2">Custom Knowledge Synthesis</h3>
-                <p className="text-on-surface-variant text-sm leading-relaxed mb-6">
-                  Upload any PDF (lecture notes, research papers, book chapters). Gemini will analyze
-                  its structure, generate a learning outline, and extract testable flashcards into
-                  your active deck.
-                </p>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="px-6 py-3 bg-secondary text-white rounded-xl font-bold flex items-center gap-2 transition-all hover:scale-[0.98] shadow-lg shadow-secondary/20 disabled:opacity-70 disabled:hover:scale-100"
-                >
-                  {isUploading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Synthesizing Knowledge...
-                    </>
-                  ) : (
-                    <>
-                      <UploadCloud className="w-5 h-5" />
-                      Upload PDF Material
-                    </>
-                  )}
-                </button>
-              </div>
-              <div
-                className="hidden md:flex w-48 h-48 bg-white rounded-2xl shadow-xl shadow-primary/5 border border-slate-100 items-center justify-center relative group cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <div className="absolute inset-4 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 group-hover:border-secondary transition-colors">
-                  <FileText className="w-8 h-8 text-slate-300 group-hover:text-secondary transition-colors" />
-                  <span className="text-xs font-bold text-slate-400 group-hover:text-secondary transition-colors">
-                    Drag & Drop PDF
-                  </span>
-                </div>
-              </div>
+      <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
+        <section className="panel p-6 sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Source studio</p>
+              <h2 className="section-title mt-3">Turn reading into a living course.</h2>
             </div>
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-mint text-ink"><WandSparkles size={20} /></div>
           </div>
-
-          {/* Curated Mastery Paths */}
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-bold text-primary">Curated Mastery Paths</h3>
-              <button
-                onClick={() => navigate('/subjects')}
-                className="text-secondary text-sm font-bold uppercase tracking-widest hover:underline"
-              >
-                View All
-              </button>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">A single PDF gives Curator the context to organize your study path and draw out testable concepts.</p>
+          <div className="mt-7 flex flex-col items-start justify-between gap-4 rounded-2xl border border-dashed border-ink/20 bg-mist/65 p-5 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-xl bg-white text-ink shadow-sm"><FileUp size={20} /></div>
+              <div><p className="text-sm font-extrabold text-ink">Choose a PDF</p><p className="mt-0.5 text-xs text-slate-500">Up to 10 MB · processed in this session</p></div>
             </div>
-
-            {topSubjects.length === 0 ? (
-              <div className="text-center py-12 text-on-surface-variant">
-                <Brain className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                <p className="font-semibold text-primary mb-1">No subjects yet</p>
-                <p className="text-sm">Upload a PDF above to generate your first course.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {topSubjects.map((subject, i) => (
-                  <motion.div
-                    key={subject.id}
-                    whileHover={{ y: -5 }}
-                    onClick={() => navigate('/sessions')}
-                    className="group relative p-6 bg-surface-container-low rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden border border-transparent hover:border-secondary/20 hover:shadow-xl hover:shadow-primary/5"
-                  >
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                      {i === 0 ? <Brain className="w-16 h-16" /> : <Zap className="w-16 h-16" />}
-                    </div>
-                    <div className="relative z-10">
-                      <h4 className="text-lg font-bold text-primary mb-2">{subject.name}</h4>
-                      <div className="w-full h-1.5 bg-slate-200 rounded-full mb-4 overflow-hidden">
-                        <div
-                          className="h-full bg-secondary rounded-full"
-                          style={{ width: `${subject.progress}%` }}
-                        ></div>
-                      </div>
-                      <div className="flex justify-between items-center text-xs text-on-surface-variant font-medium">
-                        <span>{subject.progress}% Mastery</span>
-                        <span className="flex items-center gap-1">
-                          <Timer className="w-3.5 h-3.5" /> Active {subject.lastActive}
-                        </span>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
+            <button className="button-primary" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+              {isUploading ? <><Loader2 className="animate-spin" size={17} />Reading it</> : <><Upload size={17} />Upload</>}
+            </button>
           </div>
+          {uploadError && <p className="mt-3 text-sm font-semibold text-red-700" role="alert">{uploadError}</p>}
+        </section>
 
-          {/* Activity Momentum Chart */}
-          <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-bold text-primary">Activity Momentum</h3>
-              <div className="flex items-center gap-4 text-xs font-bold text-on-surface-variant">
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-secondary"></span> Messages
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-tertiary-fixed"></span> Concepts
-                </span>
-              </div>
-            </div>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={activityData}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis
-                    dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }}
-                    dy={10}
-                  />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{
-                      borderRadius: '12px',
-                      border: 'none',
-                      boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
-                    }}
-                  />
-                  <Bar dataKey="messages" fill="#006684" radius={[4, 4, 0, 0]} barSize={32} />
-                  <Bar dataKey="concepts" fill="#9bf3df" radius={[4, 4, 0, 0]} barSize={32} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div className="col-span-12 lg:col-span-4 space-y-8">
-          {/* Weak Areas (computed from real flashcard mastery) */}
-          <div className="bg-primary-container p-8 rounded-3xl text-white shadow-2xl shadow-primary-container/30 relative overflow-hidden">
-            <div className="absolute -top-12 -right-12 w-48 h-48 bg-secondary-container/20 blur-[60px] rounded-full"></div>
-            <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-6">
-                <Brain className="text-secondary-container w-6 h-6" />
-                <h3 className="text-lg font-bold">Weak Areas</h3>
-              </div>
-
-              {weakAreas.length === 0 ? (
-                <div className="text-center py-6">
-                  <p className="text-blue-100 text-sm leading-relaxed">
-                    No weak areas detected yet. Start studying and reviewing flashcards to see
-                    personalized insights.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <p className="text-blue-100 text-sm leading-relaxed mb-6">
-                    Based on your flashcard mastery scores, these topics need attention.
-                  </p>
-                  <div className="space-y-4">
-                    {weakAreas.map((area, i) => (
-                      <div
-                        key={i}
-                        className="p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors cursor-pointer group"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h5 className="text-sm font-bold">{area.tag}</h5>
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded border ${
-                              area.avgMastery < 30
-                                ? 'bg-red-500/20 text-red-200 border-red-500/30'
-                                : 'bg-secondary-container/20 text-secondary-container border-secondary-container/30'
-                            }`}
-                          >
-                            {area.avgMastery}% MASTERY
-                          </span>
-                        </div>
-                        {area.topQuestion && (
-                          <p className="text-xs text-blue-100/80 group-hover:text-white line-clamp-2">
-                            {area.topQuestion}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={() => navigate('/flashcards')}
-                className="w-full mt-8 py-3 bg-secondary-container text-primary font-bold rounded-xl text-sm hover:scale-[0.98] transition-transform"
-              >
-                Review Flashcards
-              </button>
-            </div>
-          </div>
-
-          {/* Active Course Card */}
-          <div className="bg-surface-container-low p-8 rounded-3xl border border-slate-100">
-            <h3 className="text-lg font-bold text-primary mb-6">Active Course</h3>
-            {currentCourse ? (
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-secondary/10 flex items-center justify-center shrink-0">
-                    <BookOpen className="w-5 h-5 text-secondary" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-primary leading-tight">
-                      {currentCourse.title}
-                    </h4>
-                    <p className="text-xs text-on-surface-variant mt-1">
-                      {currentCourse.outline?.length ?? 0} topics in outline
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => navigate('/sessions')}
-                  className="w-full py-3 bg-secondary text-white font-bold rounded-xl text-sm hover:scale-[0.98] transition-transform"
-                >
-                  Continue Studying
-                </button>
-              </div>
-            ) : (
-              <div className="text-center py-4 text-on-surface-variant">
-                <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">No active course. Upload a PDF to get started.</p>
-              </div>
-            )}
-          </div>
-        </div>
+        <section className="panel p-6 sm:p-8">
+          <p className="eyebrow">Now in orbit</p>
+          {course ? (
+            <>
+              <div className="mt-4 flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sky/30 text-ink"><Layers3 size={20} /></div><div><h2 className="section-title text-xl">{course.title}</h2><p className="mt-1 text-sm text-slate-600">{course.outline.length} learning threads</p></div></div>
+              <div className="mt-7 space-y-3">{course.outline.slice(0, 3).map((item) => <div key={item.title} className="flex gap-3 text-sm"><span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${item.status === 'completed' ? 'bg-mint' : item.status === 'active' ? 'bg-sun shadow-[0_0_0_4px_rgba(255,212,107,.25)]' : 'bg-line'}`} /><span className="font-semibold text-ink">{item.title}</span></div>)}</div>
+              <button className="mt-7 inline-flex items-center gap-2 text-sm font-extrabold text-ink underline decoration-sky decoration-4 underline-offset-4" onClick={() => navigate('/sessions')}>Open workspace <ArrowRight size={16} /></button>
+            </>
+          ) : <div className="mt-6 rounded-2xl bg-sky/15 p-5"><BrainCircuit size={23} className="text-ink" /><p className="mt-4 text-sm font-bold text-ink">No course selected</p><p className="mt-1 text-sm leading-6 text-slate-600">Add a source to build your first learning map.</p></div>}
+        </section>
       </div>
 
-      {/* FAB */}
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="fixed bottom-8 right-8 w-16 h-16 bg-gradient-to-br from-secondary-container to-secondary text-white rounded-2xl shadow-xl shadow-secondary/40 flex items-center justify-center group hover:scale-110 transition-all duration-300 z-50"
-      >
-        <Plus className="w-8 h-8 group-hover:rotate-90 transition-transform" />
-      </button>
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+        <section className="panel p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Learning weather</p><h2 className="section-title mt-3">Your last seven days</h2></div><MessageCircle size={20} className="text-slate-500" /></div>
+          <div className="mt-6 h-52"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={208} initialDimension={{ width: 1, height: 208 }}><BarChart data={activity} margin={{ top: 8, right: 0, left: -28, bottom: 0 }}><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#667085', fontSize: 10, fontWeight: 700 }} /><YAxis hide /><Tooltip cursor={{ fill: 'rgba(140,186,255,.12)' }} contentStyle={{ borderRadius: 14, border: '1px solid #dce0d5', boxShadow: 'none' }} /><Bar dataKey="messages" fill="#8cbaff" radius={[7, 7, 0, 0]} barSize={18} /><Bar dataKey="concepts" fill="#8bdcba" radius={[7, 7, 0, 0]} barSize={18} /></BarChart></ResponsiveContainer></div>
+          <div className="mt-4 flex gap-4 font-mono text-[10px] uppercase tracking-wider text-slate-500"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky" />Messages</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-mint" />Concepts</span></div>
+        </section>
+
+        <section className="panel p-6 sm:p-8">
+          <div className="flex items-center justify-between"><div><p className="eyebrow">Return to</p><h2 className="section-title mt-3">Review queue</h2></div><button className="icon-button" onClick={() => navigate('/flashcards')} aria-label="Open flashcards"><ArrowRight size={17} /></button></div>
+          {weakAreas.length ? <div className="mt-6 space-y-3">{weakAreas.map((area) => <button key={area.tag} onClick={() => navigate('/flashcards')} className="group w-full rounded-2xl bg-mist/75 p-4 text-left transition-colors hover:bg-sun/45"><div className="flex items-center justify-between gap-3"><span className="text-sm font-extrabold text-ink">{area.tag}</span><span className="font-mono text-[10px] text-slate-500">{area.avgMastery}%</span></div><p className="mt-2 line-clamp-1 text-xs text-slate-600">{area.topQuestion}</p></button>)}</div> : <div className="mt-6 rounded-2xl bg-mist/70 p-5"><p className="text-sm font-bold text-ink">Nothing needs attention yet.</p><p className="mt-1 text-sm leading-6 text-slate-600">Review cards to surface the topics worth revisiting.</p></div>}
+        </section>
+      </div>
+
+      <section className="panel p-6 sm:p-8">
+        <div className="flex items-center justify-between gap-4"><div><p className="eyebrow">Course shelf</p><h2 className="section-title mt-3">Your learning maps</h2></div><button className="button-secondary" onClick={() => navigate('/subjects')}>See all <ArrowRight size={16} /></button></div>
+        {subjects.length ? <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{subjects.slice(0, 3).map((subject) => <button key={subject.id} onClick={() => navigate('/sessions')} className="group rounded-2xl border border-line bg-white/50 p-5 text-left transition-all duration-200 hover:-translate-y-1 hover:border-ink/25 hover:shadow-lg"><div className="flex justify-between gap-3"><BookOpen size={19} className="text-ink" /><span className="font-mono text-[10px] text-slate-500">{subject.progress}%</span></div><h3 className="mt-8 text-lg font-extrabold tracking-tight text-ink">{subject.name}</h3><p className="mt-1 text-xs text-slate-500">Active {subject.lastActive}</p><div className="progress-track mt-5"><div className="progress-fill" style={{ width: `${subject.progress}%` }} /></div></button>)}</div> : <div className="mt-7 rounded-2xl border border-dashed border-line p-8 text-center"><p className="font-display text-xl font-bold tracking-tight text-ink">Your shelf is waiting.</p><p className="mt-2 text-sm text-slate-600">Sources you add will appear here as courses.</p></div>}
+      </section>
     </div>
   );
 }
